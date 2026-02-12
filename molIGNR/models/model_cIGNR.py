@@ -24,15 +24,10 @@ class cIGNR(nn.Module):
 
         Input:
         ---------------------------
-        input_card: input cardinality (our graph doesn't come with feature, map positional encoding to a trainable embedding)
-        emb_dim:   graph embedding dimension for the encoder GNN
         latent_dim:  dimension of the latent z (after mapping graph embedding to the latent code z)/ can simple use the graph embedding as latent without extra mapping
 
         num_layer: number of encoder gnn layers
         gnn_type:  choose from {gin, gcn, graphsage}
-        global_pool: global pooling to obtain the final embedding
-        JK:  {last, concate, sum, max} to aggregate node representation from each layers
-        flag_emb: whether to use initial embedding
         '''
         
         super(cIGNR, self).__init__()
