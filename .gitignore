@@ -1,0 +1,85 @@
+# -------------------------
+# OS / Editor
+# -------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.tmp
+*.bak
+.vscode/
+.idea/
+
+# -------------------------
+# Python
+# -------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+build/
+dist/
+pip-wheel-metadata/
+.pytest_cache/
+.coverage*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# -------------------------
+# Logs / outputs
+# -------------------------
+*.log
+*.out
+*.err
+logs/
+runs/
+wandb/
+tensorboard/
+checkpoints/
+results/
+
+# -------------------------
+# Data / models (often large)
+# -------------------------
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.npz
+*.npy
+*.pkl
+*.joblib
+
+data/
+datasets/
+outputs/
+
+# -------------------------
+# HPC / Slurm
+# -------------------------
+slurm-*.out
+slurm-*.err
+*.o
+*.e
+
+# -------------------------
+# Your local-only folders (from your status output)
+# -------------------------
+_OTHERS/
+_cIGNR/
+film/
+implicit_graphon/
+smols/
+
+# If you want this folder local-only too:
+# molIGNR/_single_decoder/
