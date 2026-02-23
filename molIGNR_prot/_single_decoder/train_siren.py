@@ -11,7 +11,7 @@ from pathlib import Path
 # --- Model ---
 from models.model_siren import cIGNR
 from data_ import get_dataset
-from utils import arg_parse
+from utils import arg_parse, set_hyperparameters, visualize_latents
 from metrics import lddt, tm_score
 from models.siren_pytorch import SirenNet
 
@@ -197,15 +197,16 @@ if __name__ == '__main__':
     
     N = 2191    
     
-    model = cIGNR(net_adj=snet_adj, latent_dim = prog_args.latent_dim, 
+    model = cIGNR(net_adj=snet_adj, input_card=3, emb_dim = prog_args.emb_dim, latent_dim = prog_args.latent_dim, 
                   num_layer=prog_args.gnn_num_layer, 
                   gnn_layers= prog_args.gnn_layers,
-                  device=device, gnn_type = prog_args.gnn_type, N = N)
+                  device=device, flag_emb=prog_args.flag_emb, gnn_type = prog_args.gnn_type, N = N,
+                  representation = prog_args.repr)
 
     
     model = model.to(device)
     # Load Specific Dataset
-    train_loader, test_loader = get_dataset(prog_args, shuffle=True)
+    train_loader, test_loader, n_card = get_dataset(prog_args, shuffle=True)
 
     print(f"Train set length : {len(train_loader.dataset)}")
 

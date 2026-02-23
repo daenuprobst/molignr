@@ -193,22 +193,22 @@ if __name__ == '__main__':
     print('saving path is:'+prog_args.save_path)
 
 
-    # prog_args.mlp_dim_hidden = [int(x) for x in prog_args.mlp_dim_hidden.split(',')]
-    # prog_args.mlp_num_layer = len(prog_args.mlp_dim_hidden)
+    prog_args.mlp_dim_hidden = [int(x) for x in prog_args.mlp_dim_hidden.split(',')]
+    prog_args.mlp_num_layer = len(prog_args.mlp_dim_hidden)
 
     prog_args.dataset == "full_data_knn_4"
 
     prog_args.latent_dim = 8
     prog_args.n_epoch = 4000
-    prog_args.gnn_type = "gin"
 
-    prog_args.batch_size = 16
-    prog_args.gnn_num_layer = 3
-    prog_args.gnn_layers = [3, 8, 8, prog_args.latent_dim]
-    prog_args.mlp_dim_hidden = '16,12,8'   
+    prog_args.gnn_layers = [3, 8, 8, 8]
 
+    prog_args.emb_dim = 2
     prog_args.lr = 0.01
-
+    # prog_args.gnn_layers = gnn_layers + [latent_dim]
+    prog_args.gnn_num_layer = len(prog_args.gnn_layers) -1
+    
+    prog_args.flag_emb = 0
     prog_args.knn = 4
     print(prog_args.device)
 
@@ -218,11 +218,12 @@ if __name__ == '__main__':
     model = cIGNR(input_card=3, emb_dim = prog_args.emb_dim, latent_dim = prog_args.latent_dim, 
                   num_layer=prog_args.gnn_num_layer, 
                   gnn_layers= prog_args.gnn_layers,
-                  device=prog_args.device, flag_emb=prog_args.flag_emb, gnn_type = prog_args.gnn_type, N = N)
+                  device=prog_args.device, flag_emb=prog_args.flag_emb, gnn_type = prog_args.gnn_type, N = N,
+                  representation = prog_args.repr)
     
     model = model.to(torch.device(prog_args.device))
     # Load Specific Dataset
-    train_loader, test_loader = get_dataset(prog_args, shuffle=True)
+    train_loader, test_loader, n_card = get_dataset(prog_args, shuffle=True)
 
     print(f"Train set length : {len(train_loader.dataset)}")
 
