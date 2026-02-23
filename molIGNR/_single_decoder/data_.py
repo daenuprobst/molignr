@@ -19,7 +19,6 @@ def get_dataset(prog_args, num_samples = None, shuffle = True):
     train_dataset = data[:n_train]
     test_dataset = data[n_train:]  
 
-    n_card = 3    
     
     print(prog_args.dataset)
     print(f"Number of samples - train : {len(train_dataset)}")
@@ -29,6 +28,6 @@ def get_dataset(prog_args, num_samples = None, shuffle = True):
     train_loader = DataLoader(train_dataset, batch_size=prog_args.batch_size, shuffle=shuffle, drop_last=True, num_workers=4, pin_memory=True) # Data is pre-shuffled by fixed seed
     test_loader  = DataLoader(test_dataset, batch_size=prog_args.batch_size, shuffle=False, drop_last=True, num_workers=4, pin_memory=True) # For evaluating and saving all embeddings
 
-    return train_loader, test_loader, n_card
+    return train_loader, test_loader
 
 
