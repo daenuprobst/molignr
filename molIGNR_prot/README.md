@@ -4,7 +4,7 @@ Graph-based generative model for full-atom protein conformations. Encodes MD tra
 
 
 ## Model
-<img src="molIGNR_prot/molIGNR_architecture.jpg" width="400"/>
+<img src="molIGNR_architecture.jpg" width="400"/>
 
 **molIGNR** (Molecular Implicit Graphon Neural Representation):
 
