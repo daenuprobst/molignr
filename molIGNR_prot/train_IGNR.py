@@ -6,11 +6,11 @@ from torch_geometric.utils import to_dense_adj
 from pathlib import Path
 import random
 
-from models.model_cIGNR import cIGNR
+from models.model import cIGNR
 from models.siren_pytorch import SirenNet
 from data_ import get_dataset
 from utils import *
-from evaluation.metrics import *
+from molIGNR_prot.evaluation.metrics import *
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"DEVICE : {device}")
@@ -26,6 +26,8 @@ np.random.seed(seed)
 torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 
+from torch.profiler import profile, record_function, ProfilerActivity
+
 
 def test(args, test_loader, model):
     model.eval()
@@ -40,13 +42,13 @@ def test(args, test_loader, model):
 
                 edge_index = data.edge_index.to(torch.int64).to(args.device)
                 batch = data.batch.to(torch.int64).to(args.device)
-                C_input = to_dense_adj(edge_index, batch=batch).to(device)
+                C_input = to_dense_adj(edge_index, batch=batch)
 
                 loss, coords_pred = model(x, edge_index, batch, C_input, args.M)        
                 loss_coords = torch.nn.functional.mse_loss(coords_pred, x.to(device))
                 
                 total_loss = loss + loss_coords
-                if batch_idx%10==0:
+                if batch_idx%50==0:
                     print(f"Batch: {batch_idx:03d}, Loss GW : {loss.item():.4f}, Loss coords : {loss_coords.item():.4f}, Total loss : {total_loss.item():.4f}")
 
                 loss_list += total_loss.item()
@@ -63,55 +65,130 @@ def train(args, train_loader, model, test_loader,  N =2191):
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     batch_size = args.batch_size
 
-    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[60, 100], gamma=0.1)
+    lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[5, 50, 150], gamma=0.1)
+    # lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[2, 50, 150], gamma=0.1)
     loss_list_batch = []
 
     since = time.time()
     scaler = torch.amp.GradScaler('cuda')  
+
+    if "95" in args.dataset:
+        u  = mda.Universe("data/dyn_95_heavy.pdb")
+        bb_idx = u.select_atoms("protein and backbone").indices
+        sc_idx = u.select_atoms("protein and not backbone").indices
+        ca_idx = u.select_atoms("protein and name CA").indices
+
+        print(f"CA atoms:        {len(ca_idx)}")
+        print(f"Backbone atoms:  {len(bb_idx)}")
+        print(f"Sidechain atoms: {len(sc_idx)}")
+        print(f"Total:           {len(bb_idx) + len(sc_idx)}")
+        print(f"Secretin in play.... :)) ")
+
+    elif "1119" in args.dataset:
+        u  = mda.Universe("data/dyn_1119_heavy.pdb")
+        bb_idx = u.select_atoms("protein and backbone").indices
+        sc_idx = u.select_atoms("protein and not backbone").indices
+        ca_idx = u.select_atoms("protein and name CA").indices
+
+        print(f"CA atoms:        {len(ca_idx)}")
+        print(f"Backbone atoms:  {len(bb_idx)}")
+        print(f"Sidechain atoms: {len(sc_idx)}")
+        print(f"Total:           {len(bb_idx) + len(sc_idx)}")
+        print(f"Rhodopsin in play.... :)) ")
+    else:
+        u  = mda.Universe("data/heavy_chain.pdb")
+        bb_idx = u.select_atoms("protein and backbone").indices
+        sc_idx = u.select_atoms("protein and not backbone").indices
+        ca_idx = u.select_atoms("protein and name CA").indices
+
+        print(f"CA atoms:        {len(ca_idx)}")
+        print(f"Backbone atoms:  {len(bb_idx)}")
+        print(f"Sidechain atoms: {len(sc_idx)}")
+        print(f"Total:           {len(bb_idx) + len(sc_idx)}")
+        print(f"D2R in play.... :)) ")
+
+
+
+
+
+    #bb_idx = torch.load("/home/binal1/LD-FPG/blind/data/processed/atom_indices.pt", weights_only=False)["bb_indices"]                
+    #sc_idx = torch.load("/home/binal1/LD-FPG/blind/data/processed/atom_indices.pt", weights_only=False)["sc_indices"]
+
 
     for epoch in range(args.n_epoch):
         start_epoch = time.time()
         model.train()
         metrics = {"total_loss" : 0,
                    "mse" : 0,
+                   "bb_mse" :0,
+                   "sc_mse" :0,
                    "gw" : 0,
                    "lddt" : 0,
                    "tm-score": 0}
         counter = 0
 
         for batch_idx, data in enumerate(train_loader):
+
+            # if batch_idx % 10 == 0:
+            #    print(f"Batch {batch_idx}: GPU={torch.cuda.memory_allocated()/1e9:.1f}GB")
+
+            optimizer.zero_grad()
             with torch.amp.autocast('cuda'):
                 x = data.x.float().to(args.device)
                 edge_index = data.edge_index.to(torch.int64).to(args.device)
                 edge_index = edge_index.long()
 
+                # print(f"Batch {batch_idx}: x shape: {x.shape}, edge_index shape: {edge_index.shape}, batch shape: {data.batch.shape}")
+                
                 batch = data.batch.to(torch.int64).to(args.device)
                 C_input = to_dense_adj(edge_index, batch=batch)
-                
-                loss, coords_pred = model(x, edge_index, batch, C_input, args.M)     
+
+                loss, coords_pred = model(x, edge_index, batch, C_input, args.M)    
                 loss_coords = torch.nn.functional.mse_loss(coords_pred, x.to(device))
-                total_loss = loss + loss_coords
+
+                bb_mse = torch.nn.functional.mse_loss(coords_pred[bb_idx], x[bb_idx])
+                sc_mse = torch.nn.functional.mse_loss(coords_pred[sc_idx], x[sc_idx])
+                
+                if epoch <1:
+                    total_loss = loss_coords
+                else:
+                    total_loss = loss_coords + loss 
 
             scaler.scale(total_loss).backward()
             scaler.step(optimizer)
             scaler.update()
-            optimizer.zero_grad()
 
             metrics["total_loss"] += total_loss.item()
             metrics["gw"] += loss.item()
             metrics["mse"] += loss_coords.item()
+            metrics["bb_mse"] += bb_mse.item()
+            metrics["sc_mse"] += sc_mse.item()
 
             if batch_idx%100==0 or batch_idx==750:
                 print(f'Epoch: {epoch:03d}, Batch: {batch_idx:03d}, Loss:{total_loss.item():.4f}, Loss GW : {loss.item():.4f}, Loss coords : {loss_coords.item():.4f}')
 
-            #### LDDT and TM score 
-            lddt_ = lddt(coords_pred.view(batch_size, N, 3), x.view(batch_size, N, 3))
-            tm_score_ = tm_score(x, coords_pred)
-            metrics["lddt"] += lddt_
-            metrics["tm-score"] += tm_score_
+            with torch.no_grad():
+                
+                lddt_ = lddt(
+                    coords_pred.view(batch_size, N, 3).detach(),
+                    x.view(batch_size, N, 3).detach(),
+                )
 
+                tm_score__ = []
+                for b in range(batch_size):
+                    tm_score_ = tm_score(
+                        x.view(-1, N, 3)[b, ca_idx, :].detach(),                                    
+                        coords_pred.view(-1, N, 3)[b, ca_idx, :].detach(),                        
+                        )
+                    tm_score__.append(tm_score_)
+
+            metrics["lddt"] += lddt_ if isinstance(lddt_, float) else lddt_.item()
+            _tm_score = np.mean(tm_score__)
+            metrics["tm-score"] += _tm_score if isinstance(_tm_score, float) else _tm_score.item()
+            
             del lddt_, tm_score_
-            del loss, total_loss, loss_coords, x, edge_index, batch, C_input
+                
+            del loss, total_loss, loss_coords, x, edge_index, batch, C_input, coords_pred
             counter+=1
         
         lr_scheduler.step()
@@ -119,14 +196,17 @@ def train(args, train_loader, model, test_loader,  N =2191):
         for key in metrics:
             metrics[key] /= counter
 
+        print()
         print(f'Epoch: {epoch:03d}, Total Loss:{metrics["total_loss"]:.4f}, GW Loss:{metrics["gw"]:.4f}, MSE Loss:{metrics["mse"]:.4f}')
         print(f"Epoch: {epoch:03d}, lDDT: {metrics['lddt']}, tm-score: {metrics['tm-score']}")
+        print()
+        print(f'Epoch: {epoch:03d}, bb mse:{metrics["bb_mse"]:.4f}, sc mse:{metrics["sc_mse"]:.4f}')
         print()
         
         if epoch%5==0:
             if args.save_output:
                 ppath = os.getcwd() + '/Results'
-                saved_path = Path(f"{ppath}/checkpoints/"+ f'_{args.gnn_type}_epoch_{epoch}_dim_{args.latent_dim}_lr_{prog_args.lr}.pt')
+                saved_path = Path(f"{ppath}/checkpoints_final/"+ f'_{args.dataset}_{args.gnn_type}_epoch_{epoch}_dim_{args.latent_dim}_lr_{prog_args.lr}.pt')
                 saved_path.parent.mkdir(parents=True, exist_ok=True)
                 
                 torch.save({'epoch': epoch, 
@@ -136,7 +216,7 @@ def train(args, train_loader, model, test_loader,  N =2191):
                     "scaler": scaler.state_dict() if scaler is not None else None,
                     'configs': args},
                     saved_path)
-                
+        
 
         ########### ... ###############
         test_coords, test_gw, test_loss = test(args, test_loader, model)            
@@ -169,13 +249,16 @@ def main(prog_args):
     print('saving path is:'+prog_args.save_path)
 
     # Load Specific Dataset
-    train_loader, test_loader, n_card = get_dataset(prog_args, shuffle=True)
+    normalize = False
+    print(f"!!!!!!!!!!!! Normalize = {normalize} !!!!!!!!!!")
+    train_loader, test_loader, n_card = get_dataset(prog_args, shuffle=True, normalize = normalize)
+
 
     print(f"Train set length : {len(train_loader.dataset)}")
     
     prog_args.mlp_dim_hidden = [int(x) for x in prog_args.mlp_dim_hidden.split(',')]
     prog_args.mlp_num_layer = len(prog_args.mlp_dim_hidden)
-
+    
     snet_adj = SirenNet(
         dim_in = 2, # input [x,y] coordinate
         dim_hidden = prog_args.mlp_dim_hidden,
@@ -185,15 +268,46 @@ def main(prog_args):
         w0_initial = 30.,
         activation = prog_args.mlp_act )
     
-    N = 2191    # total number of atoms in the protein
+
+    for batch_idx, data in enumerate(train_loader):
+        print(f"Batch {batch_idx}: x shape: {data.x.shape[0]//prog_args.batch_size}, edge_index shape: {data.edge_index.shape}, batch shape: {data.batch.shape}")
+        break
     
-    model = cIGNR(net_adj=snet_adj, latent_dim = prog_args.latent_dim, 
+    if "bb" in prog_args.dataset:
+        N = 1091
+    elif "full" in prog_args.dataset:
+        N = 2191    # total number of atoms in the protein
+    elif prog_args.dataset == "dyn_709":
+        N = 4782
+    elif prog_args.dataset == "dyn_1119_knn4":
+        N = 4940
+    elif prog_args.dataset == "dyn_1119_knn10":
+        N = 4940
+    elif prog_args.dataset == "dyn_95_knn4":
+        N = 4618
+    elif prog_args.dataset == "dyn_95_knn10":
+        N = 4618
+    elif prog_args.dataset == "dyn_799_knn4":
+        N = 4793
+    elif prog_args.dataset == "dyn_95_backbone_knn4":
+        N = 1091
+    elif prog_args.dataset == "dyn_95_heavy":
+        N = 4250
+    elif prog_args.dataset == "dyn_1119_heavy":
+        N = 4539
+    elif prog_args.dataset == "dyn_200_heavy":
+        N = 5701
+
+    else:
+        print("It should be either backbone or full atom structure... ")
+    
+    model = cIGNR(snet_adj, latent_dim = prog_args.latent_dim, 
                   num_layer=prog_args.gnn_num_layer, 
                   gnn_layers= prog_args.gnn_layers,
                   device=prog_args.device, gnn_type = prog_args.gnn_type, N = N)
     
     model = model.to(torch.device(prog_args.device))
-    saved_path = train(prog_args, train_loader, model, test_loader)
+    saved_path = train(prog_args, train_loader, model, test_loader, N=N)
 
     return saved_path, train_loader, test_loader, model
 
@@ -203,14 +317,17 @@ if __name__ == '__main__':
     gnn_types = ['chebnet', 'gin']
     prog_args = arg_parse()
     prog_args.gnn_type = 'gin'
-    prog_args.latent_dim = 8
+    prog_args.latent_dim = 16
 
-    prog_args.dataset = "full_data_knn_4" 
-    prog_args.n_epoch = 120
-    prog_args.batch_size = 16
+    # prog_args.dataset = "dyn_1119_heavy" #"dyn_95_heavy" #"full_knn4_10" # "dyn_799_knn4" 
+
+    prog_args.M = 0
+
+    prog_args.n_epoch = 200
+    prog_args.batch_size = 12
     prog_args.gnn_num_layer = 3
-    prog_args.gnn_layers = [3, 8, 8, prog_args.latent_dim]
-    prog_args.mlp_dim_hidden = '16,12,8'   
+    prog_args.gnn_layers = [3, 32, 64, prog_args.latent_dim]
+    prog_args.mlp_dim_hidden = '16,16,16'   
     prog_args.lr = 0.01
     print()
     print(f"Dataset : {prog_args.dataset}")

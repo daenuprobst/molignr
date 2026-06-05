@@ -16,7 +16,7 @@ import umap
 from torch_geometric.utils import to_dense_adj
 from pathlib import Path
 
-from evaluation.metrics import lddt, tm_score
+from molIGNR_prot.evaluation.metrics import lddt, tm_score
 
 def arg_parse():
     parser = argparse.ArgumentParser()
@@ -153,7 +153,7 @@ def plot_latents(latent_codes, save_plot_path):
     plt.savefig(save_plot_path, dpi=300) 
 
 
-def visualize_latents(prog_args, model, train_loader, epoch = None):
+def visualize_latents(prog_args, model, train_loader, N, path = None, epoch = None, inference = False):
     """
     Visualise the latent representations using PCA, t-SNE and UMAP. 
     
@@ -165,8 +165,15 @@ def visualize_latents(prog_args, model, train_loader, epoch = None):
     model = model.to(torch.device(device))
     model.eval()
     all_zs, loss_mse, loss_gw, lddt_list, tm_score_list = [], [], [], [], []
-    N =2191 # number of atoms in the full atom structure
+    bb_mse_ , sc_mse_ = 0,0
+    # N =2191 # number of atoms in the full atom structure
     ## Get the latent encodings...
+
+
+    bb_idx = torch.load("/home/binal1/LD-FPG/blind/data/processed/atom_indices.pt", weights_only=False)["bb_indices"]                
+    sc_idx = torch.load("/home/binal1/LD-FPG/blind/data/processed/atom_indices.pt", weights_only=False)["sc_indices"]
+    
+    cntr = 0
     with torch.no_grad():
         with torch.amp.autocast('cuda'):
             for batch_idx, data in enumerate(train_loader):
@@ -181,10 +188,44 @@ def visualize_latents(prog_args, model, train_loader, epoch = None):
                 coords_pred = model.mlp_coords(z.to(device))
                 coords_pred = coords_pred.view(-1,3)
 
-                loss_coords = torch.nn.functional.mse_loss(coords_pred, x.to(device))
-                loss_mse.append(loss_coords.item())
+                if not inference:
+                    loss_coords = torch.nn.functional.mse_loss(coords_pred, x.to(device))
+                    loss_mse.append(loss_coords.item())
+                
+                else:
+                    loss_mse.append(0) 
 
-                loss, z, C_recon_list, mods = model.decode(z.to(device), C_input.to(device), N, batch.to(device))
+                #####################################
+                
+                if "bb" not in prog_args.dataset:
+                    if not inference:
+                        pred = coords_pred.view(prog_args.batch_size, N, 3).detach()
+                        true = x.view(prog_args.batch_size, N, 3).detach()
+
+                        # Backbone — all proteins at once
+                        pred_bb = pred[:, bb_idx, :]       # (B, N_bb, 3)
+                        true_bb = true[:, bb_idx, :]       # (B, N_bb, 3)
+                        bb_mse  = torch.nn.functional.mse_loss(pred_bb, true_bb)
+
+                        pred_sc = pred[:, sc_idx, :]       # (B, N_bb, 3)
+                        true_sc = true[:, sc_idx, :]       # (B, N_bb, 3)
+                        sc_mse  = torch.nn.functional.mse_loss(pred_sc, true_sc)
+
+                        bb_mse_ += bb_mse.item()
+                        sc_mse_ += sc_mse.item()
+                    else:
+                        bb_mse_ += 0
+                        sc_mse_ += 0
+
+
+                # bb_mse = torch.nn.functional.mse_loss(coords_pred[bb_idx], x[bb_idx])
+                # sc_mse = torch.nn.functional.mse_loss(coords_pred[sc_idx], x[sc_idx])
+
+                cntr +=1
+
+                #####################################
+
+                loss, z = model.decode(z.to(device), C_input.to(device), N, batch.to(device))
                 loss_gw.append(loss.item())
 
                 lddt_ = lddt(coords_pred.view(prog_args.batch_size, N, 3), x.view(prog_args.batch_size, N, 3))
@@ -193,16 +234,19 @@ def visualize_latents(prog_args, model, train_loader, epoch = None):
                 lddt_list.append(lddt_)
                 tm_score_list.append(tm_score_)
 
-                if batch_idx % 200 ==0:
-                    print(f"Batch {batch_idx}, MSE loss: {loss_coords.item():.4f}, GW loss: {loss.item():.4f}")
-                    print(f"Training LDDT score {lddt_}")
-                    print(f"Training TM-Score {tm_score_}")
+                #if batch_idx % 200 ==0:
+                #    print(f"Batch {batch_idx}, MSE loss: {loss_coords.item():.4f}, GW loss: {loss.item():.4f}")
+                #    print(f"Training LDDT score {lddt_}")
+                #    print(f"Training TM-Score {tm_score_}")
 
-    print(f"MSE loss: {np.mean(loss_mse)}")
-    print(f"GW loss: {np.mean(loss_gw)}")
 
-    print(f"LDDT in test set : {np.round(np.mean(lddt_list),3)}")
-    print(f"TM-Score in test set : {np.round(np.mean(tm_score_list),3)}")
+    print(f"\n -------------  Dataset : {prog_args.dataset} -------------\n")
+    print(f"MSE loss: {np.mean(loss_mse):4f}, GW loss: {np.mean(loss_gw):4f}")
+    print(f"LDDT in test set : {np.round(np.mean(lddt_list),3)}, TM-Score in test set : {np.round(np.mean(tm_score_list),3)}\n")
+    
+    print(f"\nBB MSE : {bb_mse_/cntr}, SC MSE : {sc_mse_/cntr}")
+    
+    # print(f"TM-Score in test set : {np.round(np.mean(tm_score_list),3)}\n")
 
     latent_codes = torch.cat(all_zs, dim=0)
     latent_codes = latent_codes.detach().cpu().numpy().astype(np.float32)
@@ -231,9 +275,14 @@ def visualize_latents(prog_args, model, train_loader, epoch = None):
     reducer = umap.UMAP()
     latent_codes_umap = reducer.fit_transform(latent_codes)
 
-    ppath = os.getcwd() + '/Results/plots/'
-    base = Path(ppath)
-    base.mkdir(parents=True, exist_ok=True)
+    if path is None:
+        ppath = os.getcwd() + '/Results/plots/'
+        base = Path(ppath)
+        base.mkdir(parents=True, exist_ok=True)
+    else:
+        ppath = os.getcwd() + path
+        base = Path(ppath)
+        base.mkdir(parents=True, exist_ok=True)
 
     pca_dir = base / "pca" / f"lr_{prog_args.lr}"
     tsne_dir = base / "tsne" / f"lr_{prog_args.lr}"
@@ -244,10 +293,12 @@ def visualize_latents(prog_args, model, train_loader, epoch = None):
         d.mkdir(parents=True, exist_ok=True)
 
     # Save the plots in the created directory
-    pca_file  = pca_dir  / f"{prog_args.gnn_type}_{prog_args.repr}_epoch_{epoch}_lr_{prog_args.lr}_pca.png"
-    tsne_file = tsne_dir / f"{prog_args.gnn_type}_{prog_args.repr}_epoch_{epoch}_lr_{prog_args.lr}_tsne.png"
-    umap_file = umap_dir / f"{prog_args.gnn_type}_{prog_args.repr}_epoch_{epoch}_lr_{prog_args.lr}_umap.png"
+    pca_file  = pca_dir  / f"{prog_args.dataset}_{prog_args.gnn_type}_epoch_{epoch}_lr_{prog_args.lr}_pca.png"
+    tsne_file = tsne_dir / f"{prog_args.dataset}_{prog_args.gnn_type}_epoch_{epoch}_lr_{prog_args.lr}_tsne.png"
+    umap_file = umap_dir / f"{prog_args.dataset}_{prog_args.gnn_type}_epoch_{epoch}_lr_{prog_args.lr}_umap.png"
 
     plot_latents(latent_codes_pca,  pca_file)
     plot_latents(latent_codes_tsne, tsne_file)
     plot_latents(latent_codes_umap, umap_file)
+
+    print(f"/n ----------------------------------------------------- /n")

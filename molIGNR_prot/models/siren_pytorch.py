@@ -11,17 +11,11 @@ from torch.profiler import profile, ProfilerActivity, record_function
 import torch.autograd.profiler as profiler
 
 
-
-
-# helpers
-
 def exists(val):
     return val is not None
 
 def cast_tuple(val, repeat = 1):
     return val if isinstance(val, tuple) else ((val,) * repeat)
-
-# sin activation
 
 class Sine(nn.Module):
     def __init__(self, w0 = 1.):
@@ -31,7 +25,6 @@ class Sine(nn.Module):
         return torch.sin(self.w0 * x)
 
 
-# siren layer
 
 class Siren(nn.Module):
     def __init__(self, dim_in, dim_out, w0 = 1., c = 6., is_first = False, use_bias = True, activation = 'sine'):
@@ -80,8 +73,6 @@ class Siren(nn.Module):
 
 
 
-# siren network
-
 class SirenNet(nn.Module):
     def __init__(self, dim_in, dim_hidden, dim_out, num_layers, w0 = 1., w0_initial = 30., use_bias = True, activation = 'sine', final_activation = 'sigmoid'):
         super().__init__()
@@ -125,8 +116,6 @@ class SirenNet(nn.Module):
         
                 
         return self.last_layer(x)
-
-# modulatory feed forward
 
 class Modulator(nn.Module):
     def __init__(self, dim_in, dim_hidden, num_layers):
