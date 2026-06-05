@@ -36,15 +36,22 @@ Output: `./ensemble/topology.pdb` + `./ensemble/samples.xtc`
 ### 2. Evaluate ensemble — `evaluate_ensemble.py`
 
 ```bash
-python evaluate_ensemble.py --reference protein.pdb --ensemble_dir ./ensemble
+# PDB reference (D2R)
+python evaluate_ensemble.py --reference protein_initial.pdb --ensemble_dir ./ensemble_d2r
+ 
+# PSF reference (GPCRmd — no PDB available)
+# The script will automatically extract the first frame as a PDB
+python evaluate_ensemble.py --reference gpcr.psf --reference_xtc gpcr.xtc --ensemble_dir ./ensemble_gpcr
 ```
-
+ 
+Replace `--reference`, `--reference_xtc`, and `--ensemble_dir` with your actual file paths.
+ 
 Aligns each generated conformation to the reference and computes:
-
+ 
 | Metric | Range | Better |
 |--------|-------|--------|
 | MSE (Å²) | ≥ 0 | lower |
 | lDDT | [0, 1] | higher |
 | TM-score | (0, 1] — > 0.5 = same fold | higher |
-
+ 
 Metrics are evaluated at sample sizes [500, 1000, 2000] to check convergence. One CSV is saved per run. Uncomment `ramachandran_bioemu()` in `main()` for a φ/ψ density plot over the full ensemble.
