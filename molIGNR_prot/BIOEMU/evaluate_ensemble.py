@@ -255,11 +255,20 @@ def main():
     )
 
     parser.add_argument("--reference", default = "data/heavy_chain.pdb",  help="Reference PDB file")
+    parser.add_argument("--reference_xtc", default=None, help="XTC for PSF reference (GPCRmd only)")
     parser.add_argument("--ensemble_dir", default = "./ensemble_d2r", help="BioEmu output dir or dir of PDB files")
     parser.add_argument("--output",       default="ensemble_metrics.csv", help="Output CSV path")
     parser.add_argument("--num_samples",  type=int, help="Maximum number of samples to evaluate")
     args = parser.parse_args()
 
+    # For GPCRmd PSF+XTC references: extract first frame as PDB
+    if args.reference.endswith(".psf"):
+        ref_pdb = args.reference.replace(".psf", "_ref.pdb")
+        u = mda.Universe(args.reference, args.reference_xtc)
+        u.trajectory[0]
+        u.select_atoms("protein").write(ref_pdb)
+        args.reference = ref_pdb
+        print(f"Extracted reference PDB from PSF+XTC → {ref_pdb}")
 
     # Turns the generated XTC file into individual PDBs for evaluation. If the PDBs already exist, this will be skipped.
     _ = xtc_to_pdbs(
